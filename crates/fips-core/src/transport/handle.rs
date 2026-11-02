@@ -169,7 +169,29 @@ impl TransportHandle {
         }
     }
 
-    pub(crate) async fn send_with_timeout(
+    /// Send without starting a dial or DNS lookup on the node's receive loop.
+    pub(crate) async fn send_existing(
+        &self,
+        addr: &TransportAddr,
+        data: &[u8],
+    ) -> Result<usize, TransportError> {
+        match self {
+            Self::Tcp(transport) => transport.send_existing(addr, data).await,
+            Self::Tor(transport) => transport.send_existing(addr, data).await,
+            Self::Udp(transport) => transport.send_existing(addr, data).await,
+            #[cfg(feature = "sim-transport")]
+            Self::Sim(transport) => transport.send_async(addr, data).await,
+            #[cfg(any(target_os = "linux", target_os = "macos"))]
+            Self::Ethernet(transport) => transport.send_async(addr, data).await,
+            Self::WebSocket(transport) => transport.send_async(addr, data).await,
+            #[cfg(feature = "webrtc-transport")]
+            Self::WebRtc(transport) => Box::pin(transport.send_async(addr, data)).await,
+            #[cfg(any(target_os = "linux", feature = "host-ble-transport", test))]
+            Self::Ble(transport) => transport.send_async(addr, data).await,
+        }
+    }
+
+    pub(crate) async fn send_existing_with_timeout(
         &self,
         addr: &TransportAddr,
         data: &[u8],
@@ -177,9 +199,11 @@ impl TransportHandle {
     ) -> Result<usize, TransportError> {
         match self {
             TransportHandle::Tcp(transport) => {
-                transport.send_async_with_timeout(addr, data, timeout).await
+                transport
+                    .send_existing_with_timeout(addr, data, timeout)
+                    .await
             }
-            _ => self.send(addr, data).await,
+            _ => self.send_existing(addr, data).await,
         }
     }
 

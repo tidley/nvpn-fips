@@ -408,10 +408,10 @@ async fn send_non_udp_transport_payload(
 ) -> Result<usize, TransportError> {
     if let Some(timeout) = non_udp_transport_send_timeout(transport.transport_type().name, lane) {
         return transport
-            .send_with_timeout(remote_addr, payload, timeout)
+            .send_existing_with_timeout(remote_addr, payload, timeout)
             .await;
     }
-    transport.send(remote_addr, payload).await
+    transport.send_existing(remote_addr, payload).await
 }
 
 fn non_udp_transport_send_timeout(

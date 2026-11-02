@@ -54,7 +54,7 @@ impl Node {
             "Reserved crossed handshake request resend"
         );
         if let Some(transport) = self.transports.get(&transport_id) {
-            match transport.send(&remote, &wire).await {
+            match transport.send_existing(&remote, &wire).await {
                 Ok(bytes) => tracing::debug!(
                     node = %node_addr, peer = %peer, %link, bytes,
                     "Sent crossed handshake request resend"
@@ -141,7 +141,7 @@ impl Node {
         // retry loop, renew the attempt, or allocate another encryption nonce.
         conn.record_resend(now.saturating_add(delay as u64));
         if let Some(transport) = self.transports.get(&transport_id) {
-            match transport.send(&remote, &wire).await {
+            match transport.send_existing(&remote, &wire).await {
                 Ok(bytes) => {
                     if let Some(conn) = self.peers.get_connection_mut(&link) {
                         conn.record_ready_heartbeat_sent(bytes);

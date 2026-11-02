@@ -94,7 +94,7 @@ impl Node {
             return;
         }
         let sent = if let Some(transport) = self.transports.get(&transport_id) {
-            match transport.send(&remote, &response).await {
+            match transport.send_existing(&remote, &response).await {
                 Ok(_) => true,
                 Err(error) => {
                     debug!(%link, %error, "Candidate Msg2 send failed; retaining for retry");
@@ -450,7 +450,10 @@ impl Node {
             true
         } else {
             match self.transports.get(&packet.transport_id) {
-                Some(transport) => match transport.send(&packet.remote_addr, &wire_msg2).await {
+                Some(transport) => match transport
+                    .send_existing(&packet.remote_addr, &wire_msg2)
+                    .await
+                {
                     Ok(bytes) => {
                         debug!(
                             link_id = %link_id,

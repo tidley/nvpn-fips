@@ -11,8 +11,10 @@ use tracing::debug;
 /// Dispatch a mutating command to the appropriate handler.
 pub async fn dispatch(node: &mut Node, command: &str, params: Option<&Value>) -> Response {
     match command {
-        "connect" => connect(node, params).await,
-        "disconnect" => disconnect(node, params).await,
+        // Mutations own deep node futures. Keep them off the dispatch frame,
+        // without adding allocations to packet or handshake send paths.
+        "connect" => Box::pin(connect(node, params)).await,
+        "disconnect" => Box::pin(disconnect(node, params)).await,
         _ => Response::error(format!("unknown command: {command}")),
     }
 }

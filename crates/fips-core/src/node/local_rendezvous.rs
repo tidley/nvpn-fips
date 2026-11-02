@@ -398,7 +398,7 @@ impl Node {
         self.local_rendezvous.pending_nonce = Some(nonce);
         let request = LocalKeyHint::Request { nonce }.encode();
         if let Some(transport) = self.transports.get(&transport_id)
-            && let Err(error) = transport.send(&remote_addr, &request).await
+            && let Err(error) = transport.send_existing(&remote_addr, &request).await
         {
             debug!(%error, "Local FIPS key-hint request failed");
         }
@@ -431,7 +431,9 @@ impl Node {
                 }
                 .encode();
                 if let Some(transport) = self.transports.get(&packet.transport_id)
-                    && let Err(error) = transport.send(&packet.remote_addr, &response).await
+                    && let Err(error) = transport
+                        .send_existing(&packet.remote_addr, &response)
+                        .await
                 {
                     debug!(%error, "Local FIPS key-hint response failed");
                 }

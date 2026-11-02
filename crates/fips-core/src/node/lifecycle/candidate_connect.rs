@@ -888,7 +888,7 @@ impl Node {
         // socket), undo this candidate so the caller can try the next address
         // in the same dial pass.
         let send_result = match self.transports.get(&transport_id) {
-            Some(transport) => Some(transport.send(&remote_addr, &wire_msg1).await),
+            Some(transport) => Some(transport.send_existing(&remote_addr, &wire_msg1).await),
             None => None,
         };
         match send_result {

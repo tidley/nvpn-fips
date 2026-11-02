@@ -30,6 +30,18 @@
             send_packet_tx,
         ));
         send_transport.start().await.expect("start send TCP");
+        // Production establishes the carrier before handing records to the
+        // dataplane. Record dispatch must never create a replacement dial.
+        send_transport.connect(&remote_addr).await.expect("prepare TCP carrier");
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            loop {
+                match send_transport.connection_state(&remote_addr) {
+                    crate::transport::ConnectionState::Connected => break,
+                    crate::transport::ConnectionState::Failed(error) => panic!("TCP preparation: {error}"),
+                    _ => tokio::task::yield_now().await,
+                }
+            }
+        }).await.expect("TCP carrier should connect before record dispatch");
 
         let direct_frame = |counter: u64, payload_len: u16| {
             let mut frame = vec![

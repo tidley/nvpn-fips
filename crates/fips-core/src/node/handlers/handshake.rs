@@ -549,7 +549,7 @@ impl Node {
                     .flatten();
                     if let Some(msg2) = duplicate_rekey_msg2 {
                         if let Some(transport) = self.transports.get(&packet.transport_id) {
-                            match transport.send(&packet.remote_addr, &msg2).await {
+                            match transport.send_existing(&packet.remote_addr, &msg2).await {
                                 Ok(_) => debug!(
                                     peer = %self.peer_display_name(&peer_node_addr),
                                     sender_index = %header.sender_idx,
@@ -726,7 +726,9 @@ impl Node {
 
                             let send_result = match self.transports.get(&packet.transport_id) {
                                 Some(transport) => {
-                                    transport.send(&packet.remote_addr, &wire_msg2).await
+                                    transport
+                                        .send_existing(&packet.remote_addr, &wire_msg2)
+                                        .await
                                 }
                                 None => Err(crate::transport::TransportError::NotStarted),
                             };
@@ -777,7 +779,10 @@ impl Node {
                             } else {
                                 match self.transports.get(&packet.transport_id) {
                                     Some(transport) => {
-                                        match transport.send(&packet.remote_addr, &msg2).await {
+                                        match transport
+                                            .send_existing(&packet.remote_addr, &msg2)
+                                            .await
+                                        {
                                             Ok(_) => {
                                                 debug!(
                                                     peer = %self.peer_display_name(&peer_node_addr),

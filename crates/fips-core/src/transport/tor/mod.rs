@@ -27,6 +27,7 @@ mod mock_control;
 #[cfg(test)]
 mod mock_socks5;
 mod monitoring;
+mod send;
 mod tasks;
 mod trait_impl;
 
@@ -531,71 +532,6 @@ impl TorTransport {
         );
 
         Ok(())
-    }
-
-    /// Send a packet asynchronously.
-    ///
-    /// If no connection exists to the given address, performs connect-on-send:
-    /// establishes a new connection through the SOCKS5 proxy, configures
-    /// socket options, splits the stream, spawns a receive task, and stores
-    /// the connection in the pool.
-    pub async fn send_async(
-        &self,
-        addr: &TransportAddr,
-        data: &[u8],
-    ) -> Result<usize, TransportError> {
-        if !self.state.is_operational() {
-            return Err(TransportError::NotStarted);
-        }
-
-        if let Err(error) = validate_stream_record(data) {
-            self.stats.record_send_error();
-            return Err(TransportError::SendFailed(format!(
-                "invalid FIPS stream record: {error}"
-            )));
-        }
-
-        // Get or create connection
-        let io = {
-            let pool = lock_pool(&self.pool);
-            pool.get(addr).map(|connection| connection.io.clone())
-        };
-
-        let io = match io {
-            Some(io) if !io.is_closed() => io,
-            None => {
-                // Connect-on-send
-                self.connect(addr).await?
-            }
-            Some(_) => self.connect(addr).await?,
-        };
-
-        match io.write_record(data, None).await {
-            Ok(()) => {
-                self.stats.record_send(data.len());
-                trace!(
-                    transport_id = %self.transport_id,
-                    remote_addr = %addr,
-                    bytes = data.len(),
-                    "Tor packet sent"
-                );
-                Ok(data.len())
-            }
-            Err(error) => {
-                self.stats.record_send_error();
-                if error.poisons_connection() {
-                    self.remove_failed_connection(addr, &io).await;
-                }
-                match error {
-                    StreamWriteError::LockTimeout | StreamWriteError::WriteTimeout => {
-                        Err(TransportError::Timeout)
-                    }
-                    StreamWriteError::Closed | StreamWriteError::Io(_) => {
-                        Err(TransportError::SendFailed(error.to_string()))
-                    }
-                }
-            }
-        }
     }
 
     async fn remove_failed_connection(

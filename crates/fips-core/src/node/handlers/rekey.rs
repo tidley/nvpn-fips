@@ -655,8 +655,9 @@ impl Node {
 
         // Send msg1 on the existing link (same transport + address). Roll
         // back every staged owner on failure so no unadvertised index leaks.
+        let remote = &initiation.remote_addr;
         let send_result = match self.transports.get(&initiation.transport_id) {
-            Some(transport) => transport.send(&initiation.remote_addr, &wire_msg1).await,
+            Some(transport) => transport.send_existing(remote, &wire_msg1).await,
             None => Err(crate::transport::TransportError::NotStarted),
         };
         match send_result {
@@ -723,7 +724,7 @@ impl Node {
             };
             let sent = if let Some(transport) = self.transports.get(&resend.transport_id) {
                 transport
-                    .send(&resend.remote_addr, &resend.payload)
+                    .send_existing(&resend.remote_addr, &resend.payload)
                     .await
                     .is_ok()
             } else {

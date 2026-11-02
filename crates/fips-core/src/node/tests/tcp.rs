@@ -16,6 +16,7 @@ use spanning_tree::{
 use std::time::Duration;
 
 mod rejected;
+mod rx_stall;
 
 /// Create a test node with a live TCP transport on loopback.
 ///

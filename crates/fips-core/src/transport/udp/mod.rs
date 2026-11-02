@@ -789,6 +789,36 @@ impl UdpTransport {
         }
 
         let socket_addr = self.resolve_cached(addr).await?;
+        self.send_resolved(socket_addr, data).await
+    }
+
+    /// Node sends never perform DNS. Outbound preparation owns resolution.
+    pub(crate) async fn send_existing(
+        &self,
+        addr: &TransportAddr,
+        data: &[u8],
+    ) -> Result<usize, TransportError> {
+        if !self.state.is_operational() {
+            return Err(TransportError::NotStarted);
+        }
+        if data.len() > self.config.mtu() as usize {
+            self.stats.record_mtu_exceeded();
+            return Err(TransportError::MtuExceeded {
+                packet_size: data.len(),
+                mtu: self.config.mtu(),
+            });
+        }
+        let socket_addr = self.resolved_socket_addr_if_cached(addr).ok_or_else(|| {
+            TransportError::SendFailed("UDP hostname requires outbound address preparation".into())
+        })?;
+        self.send_resolved(socket_addr, data).await
+    }
+
+    async fn send_resolved(
+        &self,
+        socket_addr: SocketAddr,
+        data: &[u8],
+    ) -> Result<usize, TransportError> {
         let socket = self.socket.as_ref().ok_or(TransportError::NotStarted)?;
         let local_addr = self.local_addr.ok_or(TransportError::NotStarted)?;
         if !socket_addr_families_compatible(local_addr, socket_addr) {

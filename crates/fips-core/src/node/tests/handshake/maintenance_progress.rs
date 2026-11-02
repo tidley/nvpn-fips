@@ -5,7 +5,7 @@ use crate::node::wire::build_msg1;
 use crate::transport::tor::TorTransport;
 
 #[test]
-fn rx_loop_services_endpoint_control_after_liveness_send_times_out() {
+fn rx_loop_services_endpoint_control_during_background_dial() {
     super::super::session::run_large_stack_async_test(
         "fips-maintenance-progress",
         stalled_handshake_resend,
@@ -14,8 +14,7 @@ fn rx_loop_services_endpoint_control_after_liveness_send_times_out() {
 
 async fn stalled_handshake_resend() {
     // A live local proxy accepts TCP but never answers SOCKS. This exercises
-    // a real transport await inside handshake maintenance, without DNS or an
-    // injected delay in the event loop.
+    // a real pending background dial, without DNS or an injected event-loop delay.
     let proxy = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let mut node = make_node();
     node.config.node.discovery.lan.enabled = false;
@@ -61,24 +60,35 @@ async fn stalled_handshake_resend() {
     let (control_tx, control_rx) = tokio::sync::mpsc::channel(8);
     node.endpoint_control_rx = Some(control_rx);
     let task = tokio::spawn(async move { node.run_rx_loop().await });
-    let (_stalled_socket, _) = tokio::time::timeout(Duration::from_secs(3), proxy.accept())
-        .await
-        .expect("maintenance must enter the real transport send")
-        .unwrap();
-
-    // Only timer behavior remains under test, so advance virtual time instead
-    // of spending several seconds waiting for the maintenance budget.
-    tokio::time::pause();
+    // This first round trip proves startup consumed its immediate tick.
     let (response_tx, response_rx) = tokio::sync::oneshot::channel();
     control_tx
         .send(NodeEndpointControlCommand::PeerSnapshot { response_tx })
         .await
         .unwrap();
-    let response = tokio::time::timeout(Duration::from_secs(3), response_rx).await;
+    tokio::time::timeout(Duration::from_secs(1), response_rx)
+        .await
+        .unwrap()
+        .unwrap();
+    tokio::time::pause();
+    // Make the first periodic maintenance turn due before queueing control.
+    // The biased receive loop selects that tick before the control request.
+    tokio::time::advance(Duration::from_secs(1)).await;
+    let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+    control_tx
+        .send(NodeEndpointControlCommand::PeerSnapshot { response_tx })
+        .await
+        .unwrap();
+    let response = tokio::time::timeout(Duration::from_millis(250), response_rx).await;
+    let duplicate_dial = tokio::time::timeout(Duration::from_millis(50), proxy.accept()).await;
     task.abort();
     let _ = task.await;
     assert!(
         response.is_ok_and(|response| response.is_ok()),
-        "endpoint control must progress after the bounded maintenance send"
+        "endpoint control must progress without waiting for the background dial"
+    );
+    assert!(
+        duplicate_dial.is_err(),
+        "maintenance must not start a second SOCKS dial"
     );
 }

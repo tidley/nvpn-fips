@@ -335,6 +335,37 @@ impl TcpTransport {
         data: &[u8],
         send_timeout: Duration,
     ) -> Result<usize, TransportError> {
+        self.send_record(addr, data, send_timeout, true).await
+    }
+
+    /// Send on a pooled connection only. Never resolve or dial from the node.
+    pub(crate) async fn send_existing(
+        &self,
+        addr: &TransportAddr,
+        data: &[u8],
+    ) -> Result<usize, TransportError> {
+        self.send_existing_with_timeout(addr, data, TCP_SEND_TIMEOUT)
+            .await
+    }
+
+    pub(crate) async fn send_existing_with_timeout(
+        &self,
+        addr: &TransportAddr,
+        data: &[u8],
+        send_timeout: Duration,
+    ) -> Result<usize, TransportError> {
+        // Promote a completed background dial, but never wait for one.
+        let _ = self.connection_state_sync(addr);
+        self.send_record(addr, data, send_timeout, false).await
+    }
+
+    async fn send_record(
+        &self,
+        addr: &TransportAddr,
+        data: &[u8],
+        send_timeout: Duration,
+        allow_connect: bool,
+    ) -> Result<usize, TransportError> {
         if !self.state.is_operational() {
             return Err(TransportError::NotStarted);
         }
@@ -355,6 +386,12 @@ impl TcpTransport {
 
         let io = match io {
             Some(io) if !io.is_closed() => io,
+            _ if !allow_connect => {
+                self.stats.record_send_error();
+                return Err(TransportError::SendFailed(
+                    "no existing TCP connection".into(),
+                ));
+            }
             None => {
                 // Connect-on-send
                 tokio::time::timeout_at(deadline, self.connect(addr))
@@ -568,8 +605,6 @@ impl TcpTransport {
             }
         }
 
-        let socket_addrs =
-            resolve_socket_addrs_with_network(addr, self.host_network.as_deref()).await?;
         let timeout_ms = self.config.connect_timeout_ms();
         let config = self.config.clone();
         let transport_id = self.transport_id;
@@ -599,6 +634,12 @@ impl TcpTransport {
 
         let host_network = self.host_network.clone();
         let task = tokio::spawn(async move {
+            let socket_addrs = tokio::time::timeout(
+                Duration::from_millis(timeout_ms),
+                resolve_socket_addrs_with_network(&remote_addr, host_network.as_deref()),
+            )
+            .await
+            .map_err(|_| TransportError::Timeout)??;
             let stream =
                 match connect_to_any_addr(&socket_addrs, timeout_ms, host_network.as_deref()).await
                 {

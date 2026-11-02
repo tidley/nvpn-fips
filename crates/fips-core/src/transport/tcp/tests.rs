@@ -1,5 +1,7 @@
 use super::*;
 
+mod background_dns;
+
 use crate::transport::packet_channel;
 use tokio::time::{Duration, timeout};
 

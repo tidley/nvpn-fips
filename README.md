@@ -14,6 +14,11 @@ published under the `nvpn-fips-*` crate namespace. The
 [original FIPS project](https://github.com/jmcorgan/fips) is maintained by
 Johnathan Corgan.
 
+This source fork starts from the compatible
+[Nostr VPN fork](https://github.com/mmalmi/fips). See
+[Upstream receive-loop stall fixes](docs/upstream-stall-fixes.md) for the
+selected upstream backports and compatibility limits.
+
 See [Library release verification](docs/library-releases.md) for the pinned
 release inputs, source-availability checks, and package verification procedure.
 
